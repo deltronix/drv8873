@@ -1,16 +1,15 @@
 #![cfg_attr(not(test), no_std)]
+pub mod config;
 pub mod registers;
 
-use core::marker::PhantomData;
-
+use crate::config::DRV8873Config;
 use crate::registers::*;
-use bitfield::bitfield;
 use embedded_hal::digital::StatefulOutputPin;
+use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::digital::Wait;
 use embedded_hal_async::spi::SpiDevice;
-use num_enum::{FromPrimitive, IntoPrimitive};
 
-struct DRV8873<D: SpiDevice, F: Wait, P: StatefulOutputPin> {
+pub struct DRV8873<D: SpiDevice, F: Wait, P: StatefulOutputPin> {
     dev: D,
     fault_pin: Option<F>,
     sleep_pin: Option<P>,
@@ -18,16 +17,8 @@ struct DRV8873<D: SpiDevice, F: Wait, P: StatefulOutputPin> {
     ds: DiagnosticStatus,
     config: DRV8873Config,
 }
-#[derive(Default)]
-struct DRV8873Config {
-    cr1: ControlRegister1,
-    cr2: ControlRegister2,
-    cr3: ControlRegister3,
-    cr4: ControlRegister4,
-}
-
 impl<D: SpiDevice, F: Wait, P: StatefulOutputPin> DRV8873<D, F, P> {
-    fn new(dev: D, fault_pin: Option<F>, sleep_pin: Option<P>) -> Self {
+    pub fn new(dev: D, fault_pin: Option<F>, sleep_pin: Option<P>) -> Self {
         Self {
             dev,
             fault_pin,
@@ -37,18 +28,36 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin> DRV8873<D, F, P> {
             config: DRV8873Config::default(),
         }
     }
-    async fn init(&mut self) -> Result<(), Error<D::Error>> {
+    pub async fn init(&mut self) -> Result<(), Drv8873Error<D::Error>> {
         self.config.cr1.write(&mut self.dev).await?;
         self.config.cr2.write(&mut self.dev).await?;
         self.config.cr3.write(&mut self.dev).await?;
         self.config.cr4.write(&mut self.dev).await?;
         Ok(())
     }
-}
 
-enum Error<D: embedded_hal_async::spi::Error> {
+    /// Sets the nSLEEP pin high and waits for t_wake (1.5ms).
+    async fn awaken(&mut self, delay: &mut impl DelayNs) -> Result<(), Drv8873Error<D::Error>> {
+        if let Some(sleep) = &mut self.sleep_pin {
+            sleep.set_high().map_err(|_| Drv8873Error::SleepError())?;
+            delay.delay_us(1500).await;
+        }
+        Ok(())
+    }
+    /// Sets the nSLEEP pin low waits for t_sleep (50us).
+    async fn sleep(&mut self, delay: &mut impl DelayNs) -> Result<(), Drv8873Error<D::Error>> {
+        if let Some(sleep) = &mut self.sleep_pin {
+            sleep.set_low().map_err(|_| Drv8873Error::SleepError())?;
+            delay.delay_us(50).await;
+        }
+        Ok(())
+    }
+}
+#[derive(core::fmt::Debug)]
+pub enum Drv8873Error<D: embedded_hal_async::spi::Error> {
     Drv8873Fault(FaultStatus),
     SpiError(D),
+    SleepError(),
 }
 
 #[cfg(test)]
@@ -62,44 +71,35 @@ mod tests {
     async fn device() {
         let expectations = [
             SpiTransaction::transaction_start(),
-            SpiTransaction::transfer(vec![0b00000000, 0b00000000], vec![0b11000000, 0b00000001]),
+            SpiTransaction::transfer(vec![0b01000000, 0b00000000], vec![0b11000000, 0b00000001]),
             SpiTransaction::transaction_end(),
             SpiTransaction::transaction_start(),
-            SpiTransaction::transfer(vec![0b00000010, 0b00000000], vec![0b11000000, 0b10000000]),
+            SpiTransaction::transfer(vec![0b01000010, 0b00000000], vec![0b11000000, 0b10000000]),
+            SpiTransaction::transaction_end(),
+            SpiTransaction::transaction_start(),
+            SpiTransaction::transfer(vec![0b00000100, 0b11111111], vec![0b11000000, 0b10000000]),
             SpiTransaction::transaction_end(),
         ];
         let mut spi = SpiMock::new(&expectations);
         match FaultStatus::read(&mut spi).await {
             Ok(fs) => assert!(fs.old()),
-            Err(e) => match e {
-                Error::Drv8873Fault(fs) => {
-                    println!("Fault: {:?}", fs);
-                    panic!();
-                }
-                Error::SpiError(_) => {
-                    println!("SpiError");
-                    panic!();
-                }
-            },
+            Err(_) => {
+                panic!();
+            }
         }
         match DiagnosticStatus::read(&mut spi).await {
             Ok(ds) => assert!(ds.ol1()),
-            Err(e) => match e {
-                Error::Drv8873Fault(fs) => {
-                    println!("Fault: {:?}", fs);
-                    panic!();
-                }
-                Error::SpiError(_) => {
-                    println!("SpiError");
-                    panic!();
-                }
-            },
+            Err(_) => {
+                panic!();
+            }
         }
-        // let cr = ControlRegister1(0xFF);
-        // match cr.write(&mut spi).await {
-        //     Ok(_) => {}
-        //     Err(_) => {}
-        // }
+        let cr = ControlRegister1(0xFF);
+        match cr.write(&mut spi).await {
+            Ok(_) => {}
+            Err(_) => {
+                panic!();
+            }
+        }
         spi.done();
     }
     #[test]

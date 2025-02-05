@@ -1,7 +1,7 @@
-use crate::Error;
+use crate::Drv8873Error;
 use bitfield::bitfield;
 use embedded_hal_async::spi::SpiDevice;
-use num_enum::{FromPrimitive, IntoPrimitive};
+use num_enum::{Default, FromPrimitive, IntoPrimitive};
 
 bitfield! {
     pub struct CommandByte(u8);
@@ -20,6 +20,7 @@ impl CommandByte {
     /// Construct a read command byte to the specified address.
     pub fn read(addr: u8) -> Self {
         let mut cb = Self(0);
+        cb.set_read_bit(true);
         cb.set_address(addr);
         cb
     }
@@ -37,12 +38,12 @@ where
     D: SpiDevice,
 {
     #[inline]
-    async fn read(dev: &mut D) -> Result<Self, Error<D::Error>> {
+    async fn read(dev: &mut D) -> Result<Self, Drv8873Error<D::Error>> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::read(Self::ADDR);
         dev.transfer(&mut buf, &[cb.0, 0x00])
             .await
-            .map_err(Error::SpiError)?;
+            .map_err(Drv8873Error::SpiError)?;
 
         Self::return_fault(buf[0])?;
         Ok(Self::from_byte(buf[1]))
@@ -50,9 +51,11 @@ where
     // The status byte should have it's 2 most significant bits set, the other 6 correspond to
     // faults as described in the [FaultStatus] register.
     #[inline]
-    fn return_fault(status_byte: u8) -> Result<(), Error<D::Error>> {
+    fn return_fault(status_byte: u8) -> Result<(), Drv8873Error<D::Error>> {
         if status_byte != 0b11000000 {
-            Err(Error::Drv8873Fault(FaultStatus(status_byte & 0b00111111)))
+            Err(Drv8873Error::Drv8873Fault(FaultStatus(
+                status_byte & 0b00111111,
+            )))
         } else {
             Ok(())
         }
@@ -64,12 +67,12 @@ where
     D: SpiDevice,
 {
     #[inline]
-    async fn write(&self, dev: &mut D) -> Result<(), Error<D::Error>> {
+    async fn write(&self, dev: &mut D) -> Result<(), Drv8873Error<D::Error>> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::write(Self::ADDR);
         dev.transfer(&mut buf, &[cb.0, self.to_byte()])
             .await
-            .map_err(Error::SpiError)?;
+            .map_err(|e| Drv8873Error::SpiError(e))?;
         Ok(())
     }
 }
@@ -84,6 +87,7 @@ impl Register for FaultStatus {
         self.0
     }
 }
+#[allow(clippy::derivable_impls)]
 impl Default for FaultStatus {
     fn default() -> Self {
         Self(0)
@@ -100,6 +104,7 @@ impl Register for DiagnosticStatus {
         self.0
     }
 }
+#[allow(clippy::derivable_impls)]
 impl Default for DiagnosticStatus {
     fn default() -> Self {
         Self(0)
@@ -310,7 +315,7 @@ bitfield! {
 }
 /// Determines the Toff time set in [ControlRegister1]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum Toff {
     Us20 = 0b00,
     #[default]
@@ -321,7 +326,7 @@ pub enum Toff {
 
 /// Determines the rise time set in [ControlRegister1]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum RiseTime {
     VoltPerUs53_2 = 0b000,
     VoltPerUs34_0 = 0b001,
@@ -336,7 +341,7 @@ pub enum RiseTime {
 
 /// Determines the device mode set in [ControlRegister1]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum Mode {
     PhaseEnable = 0b00,
     #[default]
@@ -346,7 +351,7 @@ pub enum Mode {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum OcpMode {
     #[default]
     LatchedFault = 0b00,
@@ -355,7 +360,7 @@ pub enum OcpMode {
     NoAction = 0b11,
 }
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum OcpTRetry {
     Ms0_5 = 0b00,
     Ms1 = 0b01,
@@ -365,7 +370,7 @@ pub enum OcpTRetry {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum Lock {
     #[default]
     Unlocked = 0b100,
@@ -373,7 +378,7 @@ pub enum Lock {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum ITrip {
     #[default]
     Enabled = 0b00,
@@ -382,7 +387,7 @@ pub enum ITrip {
     Disabled = 0b11,
 }
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum ITripLvl {
     Ampere4 = 0b00,
     Ampere5_4 = 0b01,

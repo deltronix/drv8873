@@ -1,14 +1,8 @@
+[workspace]
 [package]
 name = "drv8873"
 version = "0.1.0"
 edition = "2021"
-[lib]
-
-[[example]]
-name = "stm32g0"
-path = "examples/stm32g0.rs"
-test = false
-bench = false
 
 
 [dependencies]
@@ -17,12 +11,9 @@ embedded-hal = { version = "1.0.0", features = ["defmt-03"] }
 embedded-hal-async = { version = "1.0.0", features = ["defmt-03"] }
 num_enum = { version = "0.7.3", default-features = false }
 
-[target.'cfg(unix)'.dev-dependencies]
+[dev-dependencies]
 embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
 async-std = { version = "1.13.0", features = ["attributes"] }
-
-[target.'cfg(target_arch="arm")'.dev-dependencies]
-embedded-hal = { version = "1.0.0", features = ["defmt-03"] }
 embedded-hal-async = { version = "1.0.0", features = ["defmt-03"] }
 embassy-stm32 = { version = "0.2.0", features = [
   "chrono",

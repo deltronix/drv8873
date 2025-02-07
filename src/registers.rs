@@ -1,5 +1,8 @@
+use core::fmt::Debug;
+
 use crate::Drv8873Error;
 use bitfield::bitfield;
+use embedded_hal_async::spi::Operation;
 use embedded_hal_async::spi::SpiDevice;
 use num_enum::{Default, FromPrimitive, IntoPrimitive};
 
@@ -25,9 +28,18 @@ impl CommandByte {
         cb
     }
 }
+/// The status byte should have it's 2 most significant bits set, the other 6 correspond to
+/// faults as described in the [FaultStatus] register.
+pub(crate) fn get_status(status_byte: u8) -> Option<FaultStatus> {
+    if status_byte != 0b11000000 {
+        Some(FaultStatus(status_byte & 0b00111111))
+    } else {
+        None
+    }
+}
 /// Implemented by all the registers as a wrapper to be able to implement the [ReadableRegister]
 /// and [WriteableRegister] traits.
-pub(crate) trait Register {
+pub(crate) trait Register: Sized + Debug {
     const ADDR: u8;
     fn from_byte(byte: u8) -> Self;
     fn to_byte(&self) -> u8;
@@ -37,28 +49,16 @@ where
     Self: Sized + Register,
     D: SpiDevice,
 {
+    /// Reads a register from the device and returns itself and the device status if any of the
+    /// fault bits are set.
     #[inline]
-    async fn read(dev: &mut D) -> Result<Self, Drv8873Error<D::Error>> {
+    async fn read(dev: &mut D) -> Result<(Self, Option<FaultStatus>), Drv8873Error> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::read(Self::ADDR);
         dev.transfer(&mut buf, &[cb.0, 0x00])
             .await
-            .map_err(Drv8873Error::SpiError)?;
-
-        Self::return_fault(buf[0])?;
-        Ok(Self::from_byte(buf[1]))
-    }
-    // The status byte should have it's 2 most significant bits set, the other 6 correspond to
-    // faults as described in the [FaultStatus] register.
-    #[inline]
-    fn return_fault(status_byte: u8) -> Result<(), Drv8873Error<D::Error>> {
-        if status_byte != 0b11000000 {
-            Err(Drv8873Error::Drv8873Fault(FaultStatus(
-                status_byte & 0b00111111,
-            )))
-        } else {
-            Ok(())
-        }
+            .map_err(|_| Drv8873Error::SpiError())?;
+        Ok((Self::from_byte(buf[1]), get_status(buf[0])))
     }
 }
 pub(crate) trait WriteableRegister<D>
@@ -67,12 +67,12 @@ where
     D: SpiDevice,
 {
     #[inline]
-    async fn write(&self, dev: &mut D) -> Result<(), Drv8873Error<D::Error>> {
+    async fn write(&self, dev: &mut D) -> Result<(), Drv8873Error> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::write(Self::ADDR);
         dev.transfer(&mut buf, &[cb.0, self.to_byte()])
             .await
-            .map_err(|e| Drv8873Error::SpiError(e))?;
+            .map_err(|_| Drv8873Error::SpiError())?;
         Ok(())
     }
 }
@@ -258,7 +258,7 @@ bitfield! {
     impl Debug;
 
     /// Overcurrent condition handling mode.
-    pub from into OcpMode, ocp_mode, set_ocp_mode : 0, 1;
+    pub from into OcpMode, ocp_mode, set_ocp_mode : 1, 0;
     /// Overcurrent retry time.
     pub from into OcpTRetry, ocp_t_retry, set_ocp_t_retry : 3, 2;
     /// Disable charge-pump undervoltage fault.

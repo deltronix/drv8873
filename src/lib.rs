@@ -49,6 +49,7 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
             cfg: DRV8873Config::default(),
         }
     }
+    pub fn set_mode(&mut self, mode: InputMode<PW, P>) {}
 
     pub fn brake(&mut self, speed: u8) -> Result<(), Drv8873Error> {
         Ok(())
@@ -172,12 +173,12 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
     }
 }
 
+#[cfg(target_os = "linux")]
 #[cfg(test)]
 mod tests {
     use super::*;
     use registers::ReadableRegister;
 
-    //#[cfg(target_os = "linux")]
     mod bar {
         use super::*;
         use embedded_hal_mock::common::Generic;

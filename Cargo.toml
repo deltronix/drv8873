@@ -11,22 +11,12 @@ embedded-hal = { version = "1.0.0", features = ["defmt-03"] }
 embedded-hal-async = { version = "1.0.0", features = ["defmt-03"] }
 num_enum = { version = "0.7.3", default-features = false }
 
-[dev-dependencies]
+[target.'cfg(unix)'.dev-dependencies]
 embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
 async-std = { version = "1.13.0", features = ["attributes"] }
 embedded-hal-async = { version = "1.0.0", features = ["defmt-03"] }
-embassy-stm32 = { version = "0.2.0", features = [
-  "chrono",
-  "exti",
-  "defmt",
-  "memory-x",
-  "stm32g030k6",
-  "unstable-pac",
-  "time",
-  "time-driver-any",
-] }
-embassy-executor = { version = "0.7.0", features = ["arch-cortex-m"] }
-embassy-time = { version = "0.4.0", features = ["tick-hz-1_000_000"] }
+[dev-dependencies]
+
 [features]
 async = []
 defmt-03 = []

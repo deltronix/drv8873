@@ -1,0 +1,6 @@
+# [target.'cfg(all(target_arch = "arm", target_os = "none"']
+# runner = "probe-rs run --chip stm32g030k6"
+[target.thumbv6m-none-eabi]
+runner = "probe-rs run --chip stm32g030k6"
+[target.thumbv7em-none-eabi]
+runner = "probe-rs run --chip stm32h743zitx"

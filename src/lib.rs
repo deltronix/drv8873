@@ -7,7 +7,6 @@ use core::fmt::Debug;
 use crate::config::DRV8873Config;
 use crate::registers::*;
 use embedded_hal::digital::StatefulOutputPin;
-use embedded_hal::pwm::SetDutyCycle;
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::digital::Wait;
 use embedded_hal_async::spi::{Operation, SpiDevice};
@@ -20,24 +19,15 @@ pub enum Drv8873Error {
     InputError(&'static str),
 }
 
-#[derive(core::fmt::Debug)]
-pub enum InputMode<PW: SetDutyCycle, P: StatefulOutputPin> {
-    PhaseEnable(Option<(PW, P)>),
-    PWM(Option<(PW, PW)>),
-    IndependentHalfBridge(Option<(PW, PW)>),
-    InputDisabled,
-}
-
 /// An instance of a DRV8873 device.
-pub struct DRV8873<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> {
+pub struct DRV8873<D: SpiDevice, F: Wait, P: StatefulOutputPin> {
     dev: D,
     fault_pin: Option<F>,
     sleep_pin: Option<P>,
     disable_pin: Option<P>,
-    input_mode: InputMode<PW, P>,
     cfg: DRV8873Config,
 }
-impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F, P, PW> {
+impl<D: SpiDevice, F: Wait, P: StatefulOutputPin> DRV8873<D, F, P> {
     /// Instanciates a new DRV8873 device with it's associated SPI interface.
     pub fn new(dev: D) -> Self {
         Self {
@@ -45,73 +35,10 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
             fault_pin: None,
             sleep_pin: None,
             disable_pin: None,
-            input_mode: InputMode::PWM(None),
             cfg: DRV8873Config::default(),
         }
     }
-    pub fn set_mode(&mut self, mode: InputMode<PW, P>) {}
 
-    pub fn brake(&mut self, speed: u8) -> Result<(), Drv8873Error> {
-        Ok(())
-    }
-    pub fn forward_with_speed(&mut self, speed: u8) -> Result<(), Drv8873Error> {
-        match &mut self.input_mode {
-            InputMode::PhaseEnable(Some((en, ph))) => {
-                ph.set_high()
-                    .map_err(|e| Drv8873Error::InputError("Unable to set PH_IN2"))?;
-                en.set_duty_cycle_percent(speed)
-                    .map_err(|_| Drv8873Error::InputError("Unable to set EN_IN1"))?;
-            }
-            InputMode::PhaseEnable(None) => {
-                return Err(Drv8873Error::InputError(
-                    "No pins assigned for motor control",
-                ));
-            }
-            InputMode::PWM(Some((in1, in2))) => {
-                in2.set_duty_cycle_fully_off()
-                    .map_err(|e| Drv8873Error::InputError("Unable to set PH_IN2"))?;
-                in1.set_duty_cycle_percent(speed)
-                    .map_err(|_| Drv8873Error::InputError("Unable to set EN_IN1"))?;
-            }
-            InputMode::PWM(None) => {
-                return Err(Drv8873Error::InputError(
-                    "No pins assigned for motor control",
-                ));
-            }
-            InputMode::IndependentHalfBridge(_) => todo!(),
-            InputMode::InputDisabled => todo!(),
-        }
-        Ok(())
-    }
-    pub fn backward_with_speed(&mut self, speed: u8) -> Result<(), Drv8873Error> {
-        match &mut self.input_mode {
-            InputMode::PhaseEnable(Some((en, ph))) => {
-                ph.set_low()
-                    .map_err(|e| Drv8873Error::InputError("Unable to set PH_IN2"))?;
-                en.set_duty_cycle_percent(speed)
-                    .map_err(|_| Drv8873Error::InputError("Unable to set EN_IN1"))?;
-            }
-            InputMode::PhaseEnable(None) => {
-                return Err(Drv8873Error::InputError(
-                    "No pins assigned for motor control",
-                ));
-            }
-            InputMode::PWM(Some((in1, in2))) => {
-                in1.set_duty_cycle_fully_off()
-                    .map_err(|_| Drv8873Error::InputError("Unable to set EN_IN1"))?;
-                in2.set_duty_cycle_percent(speed)
-                    .map_err(|e| Drv8873Error::InputError("Unable to set PH_IN2"))?;
-            }
-            InputMode::PWM(None) => {
-                return Err(Drv8873Error::InputError(
-                    "No pins assigned for motor control",
-                ));
-            }
-            InputMode::IndependentHalfBridge(_) => todo!(),
-            InputMode::InputDisabled => todo!(),
-        }
-        Ok(())
-    }
     pub fn with_fault_pin(mut self, fault_pin: F) -> Self {
         self.fault_pin = Some(fault_pin);
         self
@@ -139,6 +66,27 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
         let (ds, _) = DiagnosticStatus::read(&mut self.dev).await?;
         Ok(ds)
     }
+    /// Reads [ControlRegister1] from the device, returns an error if the status byte in the SPI
+    /// response contains a fault.
+    pub async fn get_cr1(&mut self) -> Result<ControlRegister1, Drv8873Error> {
+        let (cr1, sts) = ControlRegister1::read(&mut self.dev).await?;
+        if let Some(status) = sts {
+            Err(Drv8873Error::Drv8873Fault(status))
+        } else {
+            Ok(cr1)
+        }
+    }
+
+    pub async fn modify_cr1(&mut self, mut f: F) -> Result<ControlRegister1, Drv8873Error>
+    where
+        F: FnMut(ControlRegister1) -> ControlRegister1,
+    {
+        let cr1 = f(self.get_cr1().await?);
+        cr1.write(&mut self.dev).await?;
+
+        Ok(cr1)
+    }
+
     #[inline]
     fn is_sleeping(&mut self) -> Result<bool, Drv8873Error> {
         if let Some(sleep) = &mut self.sleep_pin {
@@ -147,8 +95,8 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
             Ok(false)
         }
     }
-    #[inline]
     /// Sets the nSLEEP pin high and waits for t_wake (1.5ms).
+    #[inline]
     async fn awaken(&mut self, delay: &mut impl DelayNs) -> Result<(), Drv8873Error> {
         if self.is_sleeping()? {
             if let Some(sleep) = &mut self.sleep_pin {
@@ -158,8 +106,8 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
         }
         Ok(())
     }
-    #[inline]
     /// Sets the nSLEEP pin low waits for t_sleep (50us).
+    #[inline]
     async fn sleep(&mut self, delay: &mut impl DelayNs) -> Result<(), Drv8873Error> {
         if !self.is_sleeping()? {
             if let Some(sleep) = &mut self.sleep_pin {
@@ -173,7 +121,7 @@ impl<D: SpiDevice, F: Wait, P: StatefulOutputPin, PW: SetDutyCycle> DRV8873<D, F
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,7 +238,7 @@ mod tests {
             let mut fault = WaitMock::new(fault_expectation);
             let mut sleep = WaitMock::new(&sleep_expectation);
             let mut delay = NoopDelay::new();
-            let mut dev: DRV8873<Generic<SpiTransaction<u8>>, WaitMock, WaitMock, PwmMock> =
+            let mut dev: DRV8873<Generic<SpiTransaction<u8>>, WaitMock, WaitMock> =
                 DRV8873::new(spi.clone())
                     .with_fault_pin(fault.clone())
                     .with_sleep_pin(sleep.clone());

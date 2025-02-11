@@ -51,7 +51,6 @@ where
 {
     /// Reads a register from the device and returns itself and the device status if any of the
     /// fault bits are set.
-    #[inline]
     async fn read(dev: &mut D) -> Result<(Self, Option<FaultStatus>), Drv8873Error> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::read(Self::ADDR);
@@ -66,7 +65,6 @@ where
     Self: Sized + Register,
     D: SpiDevice,
 {
-    #[inline]
     async fn write(&self, dev: &mut D) -> Result<(), Drv8873Error> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::write(Self::ADDR);

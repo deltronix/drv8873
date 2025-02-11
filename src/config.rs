@@ -3,7 +3,7 @@ use embedded_hal_async::spi::SpiDevice;
 
 use crate::registers::get_status;
 use crate::{
-    registers::{CommandByte, ReadableRegister, Register, WriteableRegister},
+    registers::{CommandByte, Register},
     registers::{ControlRegister1, ControlRegister2, ControlRegister3, ControlRegister4},
     Drv8873Error,
 };

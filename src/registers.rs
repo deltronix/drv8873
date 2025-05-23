@@ -1,8 +1,8 @@
 use core::fmt::Debug;
+use defmt::Format;
 
 use crate::Drv8873Error;
 use bitfield::bitfield;
-use embedded_hal_async::spi::Operation;
 use embedded_hal_async::spi::SpiDevice;
 use num_enum::{Default, FromPrimitive, IntoPrimitive};
 
@@ -51,13 +51,13 @@ where
 {
     /// Reads a register from the device and returns itself and the device status if any of the
     /// fault bits are set.
-    async fn read(dev: &mut D) -> Result<(Self, Option<FaultStatus>), Drv8873Error> {
+    async fn read(dev: &mut D) -> Result<Self, Drv8873Error> {
         let mut buf: [u8; 2] = [0; 2];
         let cb = CommandByte::read(Self::ADDR);
         dev.transfer(&mut buf, &[cb.0, 0x00])
             .await
             .map_err(|_| Drv8873Error::SpiError())?;
-        Ok((Self::from_byte(buf[1]), get_status(buf[0])))
+        Ok(Self::from_byte(buf[1]))
     }
 }
 pub(crate) trait WriteableRegister<D>
@@ -298,7 +298,7 @@ bitfield! {
     impl Debug;
 
     /// Disable/enable current regulation with [ITrip]
-    pub from into ITrip, i_trip, set_i_trip: 1,0;
+    pub from into DisITrip, i_trip, set_i_trip: 1,0;
     /// Set the current limit to [ITripLvl]
     pub from into ITripLvl, i_trip_lvl, set_i_trip_lvl: 3,2;
     /// Enable open load diagnostics in active mode
@@ -347,7 +347,7 @@ pub enum Mode {
     IndependentHalfBridge = 0b10,
     InputDisabled = 0b11,
 }
-
+/// Determines the overcurrent protection mode set in [ControlRegister2]
 #[repr(u8)]
 #[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum OcpMode {
@@ -357,6 +357,7 @@ pub enum OcpMode {
     ReportOnly = 0b10,
     NoAction = 0b11,
 }
+/// Determines the overcurrent protection retry time set in [ControlRegister2]
 #[repr(u8)]
 #[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum OcpTRetry {
@@ -366,7 +367,7 @@ pub enum OcpTRetry {
     #[default]
     Ms4 = 0b11,
 }
-
+/// Locks the control registers except for these bits and the clr_flt bit.
 #[repr(u8)]
 #[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum Lock {
@@ -374,16 +375,17 @@ pub enum Lock {
     Unlocked = 0b100,
     Locked = 0b011,
 }
-
+/// Disables the current regulation for OUT1, OUT2 or both.
 #[repr(u8)]
 #[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
-pub enum ITrip {
+pub enum DisITrip {
     #[default]
     Enabled = 0b00,
     Out1Disabled = 0b01,
     Out2Disabled = 0b10,
     Disabled = 0b11,
 }
+/// Sets the current regulation amperage.
 #[repr(u8)]
 #[derive(Debug, PartialEq, PartialOrd, FromPrimitive, IntoPrimitive, Default)]
 pub enum ITripLvl {

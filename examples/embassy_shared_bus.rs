@@ -1,8 +1,9 @@
 #![no_std]
 #![no_main]
-#![cfg(target_os = "none")]
+#![cfg(not(feature = "sleep"))]
 
 use defmt::*;
+use drv8873::registers::{ControlRegister1, ITripLvl, RiseTime};
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
 use embassy_executor::Spawner;
 use embassy_stm32::exti::ExtiInput;
@@ -23,7 +24,6 @@ use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
 use drv8873::config::DRV8873Config;
-use drv8873::InputMode;
 use drv8873::DRV8873;
 
 use static_cell::StaticCell;
@@ -92,15 +92,14 @@ async fn main(spawner: Spawner) {
     let fault = ExtiInput::new(p.PB0, p.EXTI0, embassy_stm32::gpio::Pull::None);
     let sleep = Output::new(p.PA0, Level::High, Speed::High);
 
-    let mode = InputMode::PWM(Some((pwm1, pwm2)));
+    let mut config = DRV8873Config::default();
+    config.cr1.set_sr(RiseTime::VoltPerUs13_0);
+    config.cr2.set_itrip_rep(true);
+    config.cr4.set_i_trip_lvl(ITripLvl::Ampere4);
 
-    let drv8873_config = DRV8873Config::default();
-    let drv8873: DRV8873<
-        &mut SpiDevice<'_, NoopRawMutex, Spi<'_, Async>, Output<'_>>,
-        ExtiInput,
-        Output<'_>,
-        InputMode<SimplePwmChannel<TIM1>, Output<'_>>,
-    > = DRV8873::new(&mut dev);
+    let mut drv: DRV8873<&mut SpiDevice<'_, NoopRawMutex, Spi<'_, Async>, Output<'_>>, Output<'_>> =
+        DRV8873::new(&mut dev);
+    drv.write_config(&config);
 
     unwrap!(spawner.spawn(fault_handler(fault)));
     loop {

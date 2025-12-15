@@ -18,6 +18,16 @@ pub struct DRV8873Config {
     pub cr3: ControlRegister3,
     pub cr4: ControlRegister4,
 }
+impl Clone for DRV8873Config {
+    fn clone(&self) -> Self {
+        Self {
+            cr1: ControlRegister1::from_byte(self.cr1.0),
+            cr2: ControlRegister2::from_byte(self.cr2.0),
+            cr3: ControlRegister3::from_byte(self.cr3.0),
+            cr4: ControlRegister4::from_byte(self.cr4.0),
+        }
+    }
+}
 impl Format for DRV8873Config {
     fn format(&self, fmt: Formatter) {
         defmt::write!(

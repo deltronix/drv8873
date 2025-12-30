@@ -1,5 +1,4 @@
 use core::fmt::Debug;
-use defmt::Format;
 
 use crate::Drv8873Error;
 use bitfield::bitfield;
@@ -240,6 +239,7 @@ bitfield! {
 bitfield! {
     pub struct ControlRegister1(u8);
     impl Debug;
+
 
     /// Set the input [Mode]
     pub from into Mode,     mode, set_mode : 1, 0;

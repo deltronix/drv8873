@@ -1,14 +1,21 @@
+//! # DRV8873
+//!
+//! An `async` library for interacting with the Texas Instruments [DRV8873SPW](https://www.ti.com/product/DRV8873) 40-V, 10-A H-Bridge
+//! motor driver.
+//!
 #![cfg_attr(not(test), no_std)]
 pub mod config;
 pub mod registers;
-
 mod tests;
 
-pub use crate::config::DRV8873Config;
-pub use crate::registers::{
-    ControlRegister1, ControlRegister2, ControlRegister3, ControlRegister4,
+#[doc(inline)]
+pub use crate::{
+    config::DRV8873Config,
+    registers::{
+        ControlRegister1, ControlRegister2, ControlRegister3, ControlRegister4, DisITrip, ITripLvl,
+        Lock, Mode, OcpMode, OcpTRetry, RiseTime, Toff,
+    },
 };
-pub use crate::registers::{DisITrip, ITripLvl, Lock, Mode, OcpMode, OcpTRetry, RiseTime, Toff};
 
 use crate::registers::*;
 use embedded_hal::digital::StatefulOutputPin;
